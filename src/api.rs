@@ -69,7 +69,6 @@ pub async fn get_auth_token() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 async fn url_builder(uri: &str, auth_token: &str) -> Url {
-    let mut url = String::new();
     let host: String = match std::env::var("HOST") {
         Ok(s) => s,
         Err(_e) => {
@@ -77,17 +76,13 @@ async fn url_builder(uri: &str, auth_token: &str) -> Url {
             process::exit(1)
         }
     };
-    url.push_str(&host);
-    url.push_str(uri);
-    url.push_str("?auth=");
-    url.push_str(auth_token);
-    match Url::parse(&url) {
-        Ok(u) => u,
-        Err(_) => {
-            error!("Invalid Domain");
-            process::exit(1)
-        }
-    }
+    let options = Url::options();
+    let api = Url::parse(host.as_str())?;
+    let base_url = options.base_url(Some(&api));
+    base_url.parse("api/v3");
+    base_url.parse(uri);
+    println!("{}", base_url);
+    base_url
 }
 
 pub async fn get_mentions(auth: &str) -> Result<Value, Error> {
