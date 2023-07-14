@@ -4,6 +4,8 @@ services:
     environment:
       HOST: "https://your.domain.com/"
       DATABASE_URL: "postgres://postgres:password@db/lemmyremindyou"
+      BOT_USERNAME: remindme
+      BOT_PASSWORD: password
     depends_on:
       - db
   db:

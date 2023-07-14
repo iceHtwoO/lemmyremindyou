@@ -6,8 +6,11 @@ COPY ./ ./
 
 RUN cargo build --release
 
+FROM debian:bullseye-slim
+
+COPY --from=builder /target/release/lemmyremindyou .
+
 RUN apt update
 RUN apt install -y libpq-dev openssl 
 
-CMD ["bash", "-c", "diesel migration run"]
-ENTRYPOINT ["/bin/bash", "-c", "./target/release/lemmyremindyou"]
+ENTRYPOINT ["/bin/bash", "-c", "./lemmyremindyou"]
