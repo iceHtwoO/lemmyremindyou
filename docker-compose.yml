@@ -1,0 +1,14 @@
+services:
+  lemmyremindyou:
+    build: .
+    environment:
+      HOST: "https://your.domain.com/"
+      DATABASE_URL: "postgres://postgres:password@db/lemmyremindyou"
+    depends_on:
+      - db
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: lemmyremindyou
