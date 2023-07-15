@@ -1,11 +1,12 @@
 services:
   lemmyremindyou:
-    build: .
+    build: iceh2/lemmyremindyou
     environment:
       HOST: "https://your.domain.com/"
       DATABASE_URL: "postgres://postgres:password@db/lemmyremindyou"
       BOT_USERNAME: remindme
       BOT_PASSWORD: password
+      UPDATE_INTERVAL: 30 #Seconds between scanning
     depends_on:
       - db
   db:

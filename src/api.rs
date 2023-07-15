@@ -70,12 +70,9 @@ pub async fn get_auth_token() -> Result<String, Box<dyn std::error::Error>> {
 
 async fn url_builder(uri: &str, auth_token: &str) -> Url {
     let mut url = String::new();
-    let host: String = match std::env::var("HOST") {
+    let host: String = match std::env::var("HOST"){
         Ok(s) => s,
-        Err(_e) => {
-            error!("Host not set");
-            process::exit(1)
-        }
+        Err(_e) => {error!("Host not set"); process::exit(1)},
     };
     url.push_str(&host);
     url.push_str(uri);
@@ -83,10 +80,7 @@ async fn url_builder(uri: &str, auth_token: &str) -> Url {
     url.push_str(auth_token);
     match Url::parse(&url) {
         Ok(u) => u,
-        Err(_) => {
-            error!("Invalid Domain");
-            process::exit(1)
-        }
+        Err(_) => {error!("Invalid Domain"); process::exit(1)},
     }
 }
 
