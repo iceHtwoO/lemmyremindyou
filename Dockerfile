@@ -11,6 +11,6 @@ FROM debian:bullseye-slim
 COPY --from=builder /target/release/lemmyremindyou .
 
 RUN apt update
-RUN apt install -y libpq-dev openssl 
+RUN apt install -y libpq-dev openssl ca-certificates
 
 ENTRYPOINT ["/bin/bash", "-c", "./lemmyremindyou"]

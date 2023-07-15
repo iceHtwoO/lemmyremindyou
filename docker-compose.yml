@@ -1,6 +1,6 @@
 services:
   lemmyremindyou:
-    build: iceh2/lemmyremindyou
+    image: iceh2/lemmyremindyou
     environment:
       HOST: "https://your.domain.com/"
       DATABASE_URL: "postgres://postgres:password@db/lemmyremindyou"
@@ -9,6 +9,7 @@ services:
       UPDATE_INTERVAL: 30 #Seconds between scanning
     depends_on:
       - db
+    restart: always
   db:
     image: postgres
     restart: always
