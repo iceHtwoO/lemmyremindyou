@@ -1,18 +1,20 @@
 #[macro_use]
 extern crate diesel_migrations;
 
-use crate::diesel_migrations::MigrationHarness;
 use chrono::{DateTime, Datelike, Duration, NaiveDateTime, TimeZone, Timelike, Utc};
-use diesel::prelude::*;
-use lemmyremindyou::models::*;
+use crate::diesel_migrations::MigrationHarness;
+use env_logger::{Builder, WriteStyle};
 use lemmyremindyou::schema::reminder;
+use lemmyremindyou::models::*;
+use diesel::prelude::*;
 use lemmyremindyou::*;
-use log::error;
-use log::info;
-use regex::Regex;
+use log::LevelFilter;
 use reqwest::Error;
 use std::process;
+use regex::Regex;
 use std::thread;
+use log::error;
+use log::info;
 mod api;
 mod dto;
 
@@ -20,7 +22,13 @@ pub const MIGRATIONS: diesel_migrations::EmbeddedMigrations = embed_migrations!(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    let mut builder = Builder::new();
+
+    builder
+        .filter(None, LevelFilter::Info)
+        .write_style(WriteStyle::Always)
+        .init();
+
     let auth = match api::get_auth_token().await {
         Ok(t) => t,
         Err(e) => {
