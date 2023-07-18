@@ -3,7 +3,6 @@ use log::error;
 use reqwest::{Error, Url};
 use serde_json::{json, Value};
 use std::process;
-
 use crate::dto;
 
 pub async fn comment(auth: &str, content: &str, parent_id: i32, post_id: i32) -> Result<(), Error> {
@@ -19,8 +18,7 @@ pub async fn comment(auth: &str, content: &str, parent_id: i32, post_id: i32) ->
         .post(url_builder("api/v3/comment", "").await)
         .json(&body)
         .send()
-        .await
-        .expect("failed to respond");
+        .await?;
     debug!("Sent Comment");
     Ok(())
 }
@@ -56,9 +54,7 @@ pub async fn get_auth_token() -> Result<String, Box<dyn std::error::Error>> {
         .await?;
 
     if out.status() != 200 {
-        error!("Authentication Failed with code {}", out.status());
-        println!("{}", out.url());
-        process::exit(1)
+        return Err(format!("Authentication Failed with \"{} {}\"", out.status(), out.text().await?).as_str())?;
     }
 
     let out = out.json::<serde_json::Value>().await?;

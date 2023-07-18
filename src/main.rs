@@ -1,16 +1,15 @@
 #[macro_use]
 extern crate diesel_migrations;
 
-use chrono::{DateTime, Datelike, Duration, NaiveDateTime, TimeZone, Timelike, Utc};
+use chrono::{ DateTime, Datelike, Duration, NaiveDateTime, TimeZone, Timelike, Utc };
 use crate::diesel_migrations::MigrationHarness;
-use env_logger::{Builder, WriteStyle};
+use env_logger::{ Builder, WriteStyle };
 use lemmyremindyou::schema::reminder;
 use lemmyremindyou::models::*;
 use diesel::prelude::*;
 use lemmyremindyou::*;
 use log::LevelFilter;
 use reqwest::Error;
-use std::process;
 use regex::Regex;
 use std::thread;
 use log::error;
@@ -24,18 +23,9 @@ pub const MIGRATIONS: diesel_migrations::EmbeddedMigrations = embed_migrations!(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut builder = Builder::new();
 
-    builder
-        .filter(None, LevelFilter::Info)
-        .write_style(WriteStyle::Always)
-        .init();
+    builder.filter(None, LevelFilter::Info).write_style(WriteStyle::Always).init();
 
-    let auth = match api::get_auth_token().await {
-        Ok(t) => t,
-        Err(e) => {
-            error!("Faild to Authenticate {}", e.to_string());
-            process::exit(1)
-        }
-    };
+    let auth = get_auth_token_retry().await?;
 
     let pmconnection = &mut establish_connection();
     pmconnection.run_pending_migrations(MIGRATIONS).unwrap();
@@ -50,10 +40,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         remind_user(connection, &auth).await?;
 
         pm.await?;
-        thread::sleep(std::time::Duration::from_secs(
-            get_update_interval().await as u64,
-        ));
+        thread::sleep(std::time::Duration::from_secs(get_update_interval().await as u64));
     }
+}
+
+async fn get_auth_token_retry() -> Result<String, Box<dyn std::error::Error>> {
+    for _try in 1..4 {
+        match api::get_auth_token().await {
+            Ok(t) => {
+                return Ok(t);
+            }
+            Err(e) => {
+                error!("{}, waiting 5 seconds", e.to_string());
+            }
+        }
+        thread::sleep(std::time::Duration::from_secs(5));
+    }
+    Err("Faild to Authenticate 4 Times".into())
 }
 
 async fn remind_user(dbcon: &mut PgConnection, auth: &str) -> Result<(), Error> {
@@ -71,17 +74,11 @@ async fn remind_user(dbcon: &mut PgConnection, auth: &str) -> Result<(), Error> 
         );
         if reminder.user_message.is_some() {
             meassage.push_str(
-                format!("with the message:\"{}\"", reminder.user_message.unwrap()).as_str(),
-            )
+                format!("with the message:\"{}\"", reminder.user_message.unwrap()).as_str()
+            );
         }
         info!("Reminded User!");
-        api::comment(
-            auth,
-            meassage.as_str(),
-            reminder.parent_id,
-            reminder.post_id,
-        )
-        .await?;
+        api::comment(auth, meassage.as_str(), reminder.parent_id, reminder.post_id).await?;
         update_reminded_status(dbcon, reminder.id).await;
     }
     Ok(())
@@ -89,7 +86,8 @@ async fn remind_user(dbcon: &mut PgConnection, auth: &str) -> Result<(), Error> 
 
 async fn update_reminded_status(dbcon: &mut PgConnection, update_id: i32) {
     use self::schema::reminder::dsl::*;
-    diesel::update(reminder.find(update_id))
+    diesel
+        ::update(reminder.find(update_id))
         .set(reminded.eq(true))
         .returning(Reminder::as_returning())
         .get_result(dbcon)
@@ -97,16 +95,14 @@ async fn update_reminded_status(dbcon: &mut PgConnection, update_id: i32) {
 }
 
 async fn get_update_interval() -> i64 {
-    std::env::var("UPDATE_INTERVAL")
-        .unwrap_or("30".to_string())
-        .parse::<i64>()
-        .unwrap()
+    std::env::var("UPDATE_INTERVAL").unwrap_or("30".to_string()).parse::<i64>().unwrap()
 }
 
 async fn get_reminders(dbcon: &mut PgConnection) -> Vec<Reminder> {
     use self::schema::reminder::dsl::*;
-    let ts: i64 =
-        (chrono::offset::Utc::now() + Duration::seconds(get_update_interval().await)).timestamp();
+    let ts: i64 = (
+        chrono::offset::Utc::now() + Duration::seconds(get_update_interval().await)
+    ).timestamp();
 
     reminder
         .filter(reminder_timestamp.le(ts))
@@ -119,19 +115,17 @@ async fn get_reminders(dbcon: &mut PgConnection) -> Vec<Reminder> {
 async fn process_mention(
     dbcon: &mut PgConnection,
     auth: &str,
-    mentions: Vec<dto::Mention>,
+    mentions: Vec<dto::Mention>
 ) -> Result<(), Error> {
     for mention in mentions {
         let clone: dto::Mention = mention.clone();
         if !mention.person_mention.read {
-            let plublished_dt = &mention
-                .person_mention
-                .published
+            let plublished_dt = &mention.person_mention.published
                 .split(".")
                 .next()
                 .expect("Error Converting publish Date");
             let start_time = Utc.from_utc_datetime(
-                &NaiveDateTime::parse_from_str(plublished_dt, "%Y-%m-%dT%H:%M:%S").unwrap(),
+                &NaiveDateTime::parse_from_str(plublished_dt, "%Y-%m-%dT%H:%M:%S").unwrap()
             );
             let dt = match match_time(mention.comment.content, start_time).await {
                 Ok(t) => t,
@@ -151,13 +145,7 @@ async fn process_mention(
                     dt.minute(),
                     dt.second()
                 );
-                api::comment(
-                    &auth,
-                    &meassage,
-                    mention.comment.id,
-                    mention.comment.post_id,
-                )
-                .await?;
+                api::comment(&auth, &meassage, mention.comment.id, mention.comment.post_id).await?;
                 api::mark_read(&auth, mention.person_mention.id).await?;
                 save_request(dbcon, clone, dt.timestamp(), start_time.timestamp()).await;
                 info!("Request Saved {}", dt);
@@ -168,7 +156,8 @@ async fn process_mention(
 }
 
 async fn invalid_request(auth: &str, mention: dto::Mention) -> Result<(), Error> {
-    let message = "### Invalid Request\n
+    let message =
+        "### Invalid Request\n
                         **year**: x (year|yr|y)\n
                         **days**: x (day|d)\n
                         **hour**: x (hour|h)\n
@@ -186,7 +175,7 @@ async fn save_request(
     dbcon: &mut PgConnection,
     mention: dto::Mention,
     reminder_timestamp: i64,
-    post_timestamp: i64,
+    post_timestamp: i64
 ) {
     let msg = extract_message(mention.clone().comment.content).await;
 
@@ -200,7 +189,8 @@ async fn save_request(
         reminded: false,
     };
 
-    diesel::insert_into(reminder::table)
+    diesel
+        ::insert_into(reminder::table)
         .values(&new_reminder)
         .returning(Reminder::as_returning())
         .get_result(dbcon)
@@ -210,14 +200,7 @@ async fn save_request(
 async fn extract_message(content: String) -> Option<String> {
     let message_regex: Regex = Regex::new(r#""(.*?)""#).unwrap();
     if message_regex.is_match(&content) {
-        Some(
-            message_regex
-                .find(content.as_str())
-                .unwrap()
-                .as_str()
-                .to_string()
-                .replace("\"", ""),
-        )
+        Some(message_regex.find(content.as_str()).unwrap().as_str().to_string().replace("\"", ""))
     } else {
         None
     }
@@ -225,7 +208,7 @@ async fn extract_message(content: String) -> Option<String> {
 
 async fn match_time(
     content: String,
-    start_time: DateTime<chrono::Utc>,
+    start_time: DateTime<chrono::Utc>
 ) -> Result<DateTime<Utc>, Box<dyn std::error::Error>> {
     let re = Regex::new(r"(\d+)\s?(year|yr|y|day|d|hour|h|minute|min|m|second|sec|s)").unwrap();
     let mut dt = start_time;
