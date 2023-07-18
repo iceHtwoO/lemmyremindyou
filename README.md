@@ -20,4 +20,11 @@ This is a Reminder Bot for your Lemmy server. Users can mention it in a comment 
 Example: ```@remindme@lemmy.icyserver.eu 4years 2d 3 mins and 2 seconds "Your Reminder"```
 
 ## Setup
-Run the docker-compose file with username, password and server URL of a bot account.
+Run the docker-compose file with following Environment variables
+| ENV             | DESCRIPTION                  |
+| --------------- | ---------------------------- | 
+| USERNAME        | username of bot account      |
+| PASSWORD        | password of bot account      |
+| HOST            | Lemmy instance domain        |
+| DATABASE_URL    | postgres database url        |
+| UPDATE_INTERVAL | waiting time between bot scanning for new mentions (Default:30s) decreading it will improve response time but increase load |
