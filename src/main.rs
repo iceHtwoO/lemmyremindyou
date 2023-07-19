@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate diesel_migrations;
 
-use chrono::{ DateTime, Datelike, Duration, NaiveDateTime, TimeZone, Timelike, Utc };
+use chrono::{ DateTime, Duration, NaiveDateTime, Utc, TimeZone };
 use crate::diesel_migrations::MigrationHarness;
 use env_logger::{ Builder, WriteStyle };
 use lemmyremindyou::schema::reminder;
@@ -14,6 +14,7 @@ use regex::Regex;
 use std::thread;
 use log::error;
 use log::info;
+mod messages;
 mod api;
 mod dto;
 
@@ -63,22 +64,9 @@ async fn remind_user(dbcon: &mut PgConnection, auth: &str) -> Result<(), Error> 
     for reminder in get_reminders(dbcon).await {
         let naive = NaiveDateTime::from_timestamp_opt(reminder.reminder_timestamp, 0).expect("Err");
         let dt: DateTime<Utc> = DateTime::from_utc(naive, Utc);
-        let mut meassage = format!(
-            "Here is your reminder for the {}-{}-{} at {}:{}:{} UTC ",
-            dt.year(),
-            dt.month(),
-            dt.day(),
-            dt.hour(),
-            dt.minute(),
-            dt.second()
-        );
-        if reminder.user_message.is_some() {
-            meassage.push_str(
-                format!("with the message:\"{}\"", reminder.user_message.unwrap()).as_str()
-            );
-        }
+        let message = messages::create_reminder_message(dt, &reminder).await;
         info!("Reminded User!");
-        api::comment(auth, meassage.as_str(), reminder.parent_id, reminder.post_id).await?;
+        api::comment(auth, message.as_str(), reminder.parent_id, reminder.post_id).await?;
         update_reminded_status(dbcon, reminder.id).await;
     }
     Ok(())
@@ -127,7 +115,7 @@ async fn process_mention(
             let start_time = Utc.from_utc_datetime(
                 &NaiveDateTime::parse_from_str(plublished_dt, "%Y-%m-%dT%H:%M:%S").unwrap()
             );
-            let dt = match match_time(mention.comment.content, start_time).await {
+            let dt = match match_time(&mention.comment.content, start_time).await {
                 Ok(t) => t,
                 Err(_e) => {
                     return invalid_request(auth, clone).await;
@@ -136,16 +124,9 @@ async fn process_mention(
             if dt == start_time {
                 return invalid_request(auth, clone).await;
             } else {
-                let meassage = format!(
-                    "Okay I'll remind you on {}-{}-{} {}:{}:{} UTC",
-                    dt.year(),
-                    dt.month(),
-                    dt.day(),
-                    dt.hour(),
-                    dt.minute(),
-                    dt.second()
-                );
-                api::comment(&auth, &meassage, mention.comment.id, mention.comment.post_id).await?;
+                let message = messages::create_conformation_message(dt, &mention.comment.content).await;
+                
+                api::comment(&auth, &message, mention.comment.id, mention.comment.post_id).await?;
                 api::mark_read(&auth, mention.person_mention.id).await?;
                 save_request(dbcon, clone, dt.timestamp(), start_time.timestamp()).await;
                 info!("Request Saved {}", dt);
@@ -156,16 +137,7 @@ async fn process_mention(
 }
 
 async fn invalid_request(auth: &str, mention: dto::Mention) -> Result<(), Error> {
-    let message =
-        "### Invalid Request\n
-                        **year**: x (year|yr|y)\n
-                        **days**: x (day|d)\n
-                        **hour**: x (hour|h)\n
-                        **minute**: x (minute|min|m)\n
-                        **second**: x (second|sec|s)\n
-                        Example: 4years 2d 3 mins and 2 seconds \"Your Reminder\"";
-
-    api::comment(&auth, message, mention.comment.id, mention.comment.post_id).await?;
+    api::comment(&auth, messages::invalid_request_string().await.as_str(), mention.comment.id, mention.comment.post_id).await?;
     api::mark_read(&auth, mention.person_mention.id).await?;
     info!("Recived Invalid Reqiest");
     Ok(())
@@ -207,7 +179,7 @@ async fn extract_message(content: String) -> Option<String> {
 }
 
 async fn match_time(
-    content: String,
+    content: &String,
     start_time: DateTime<chrono::Utc>
 ) -> Result<DateTime<Utc>, Box<dyn std::error::Error>> {
     let re = Regex::new(r"(\d+)\s?(year|yr|y|day|d|hour|h|minute|min|m|second|sec|s)").unwrap();
@@ -220,17 +192,12 @@ async fn match_time(
 }
 
 async fn get_duration(ammount: i64, time: &str) -> Duration {
-    let year: Regex = Regex::new(r"year|yr|Y").unwrap();
-    let day = Regex::new(r"day|d").unwrap();
-    let hour = Regex::new(r"hour|h").unwrap();
-    let minute = Regex::new(r"minute|min|m").unwrap();
-    let seconds = Regex::new(r"second|sec|s").unwrap();
     match () {
-        () if year.is_match(&time) => Duration::days(ammount * 365),
-        () if day.is_match(&time) => Duration::days(ammount),
-        () if hour.is_match(&time) => Duration::hours(ammount),
-        () if minute.is_match(&time) => Duration::minutes(ammount),
-        () if seconds.is_match(&time) => Duration::seconds(ammount),
+        () if Regex::new(r"year|yr|y").unwrap().is_match(&time) => Duration::days(ammount * 365),
+        () if Regex::new(r"day|d").unwrap().is_match(&time) => Duration::days(ammount),
+        () if Regex::new(r"hour|h").unwrap().is_match(&time) => Duration::hours(ammount),
+        () if Regex::new(r"minute|min|m").unwrap().is_match(&time) => Duration::minutes(ammount),
+        () if Regex::new(r"second|sec|s").unwrap().is_match(&time) => Duration::seconds(ammount),
         () => Duration::zero(),
     }
 }
